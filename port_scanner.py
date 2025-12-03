@@ -22,6 +22,16 @@ common_services = {
         8080: "HTTP Proxy"
     }
         
+def get_service_name(port: int) -> str:
+        #check own mapping first
+        if port in common_services:
+            return common_services[port]
+        #then check system mapping
+        try:
+            return socket.getservbyport(port)
+        except OSError:
+            return "Unknown Service"
+        
 def worker(host: str, q: Queue , open_ports: list, timeout: float = 0.5):
     """
     Try to connect to a single TCP port.
@@ -42,9 +52,10 @@ def worker(host: str, q: Queue , open_ports: list, timeout: float = 0.5):
         try:
             result = s.connect_ex((host, port));
             if result == 0:
+                service = get_service_name(port)
                 with print_lock:
-                    open_ports.append(port);
-                    print(f"Port {port} is open.");
+                    open_ports.append(port, service);
+                    print(f"Port {port}/TCP is open ({service})");
             
         except socket.error:
             pass
