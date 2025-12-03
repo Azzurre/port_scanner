@@ -24,6 +24,7 @@ common_services = {
     8080: "HTTP Proxy",
 }
 
+BANNER_PORTS = {21, 22, 25, 80, 110, 143, 443, 8080}
 
 def get_service_name(port: int) -> str:
     # Check own mapping first
@@ -36,7 +37,32 @@ def get_service_name(port: int) -> str:
     except OSError:
         return "Unknown Service"
 
-
+def grab_banner(host: str, port: int, timeout: float = 1.0) -> str:
+    """
+    Attempt to grab the banner from an open port.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect((host, port))
+            
+            if port in {80, 8080, 8000, 8008}:
+                try:
+                    s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+                except OSError:
+                    pass
+            try:
+                data = s.recv(1024)
+                if not data:
+                    return None
+                return data.decode(errors="ignore").strip()
+            except socket.timeout:
+                return None
+            banner = s.recv(1024).decode(errors="ignore").strip()
+            return banner if banner else None
+    except OSError:
+        return None
+    
 def worker(host: str, q: Queue, open_ports: list, timeout: float = 0.5, verbose: bool = True):
     """
     Worker thread: takes ports from the queue and checks if they're open.
@@ -50,9 +76,18 @@ def worker(host: str, q: Queue, open_ports: list, timeout: float = 0.5, verbose:
                 result = s.connect_ex((host, port))
                 if result == 0:
                     service = get_service_name(port)
+                    
+                    banner = None
+                    if port in BANNER_PORTS:
+                        banner = grab_banner(host, port)
+                        
                     with print_lock:
                         if verbose:
-                            print(f"Port {port}/TCP is open ({service})")
+                            line = f"Port {port}/TCP is open ({service})"
+                            if banner:
+                                line += f" - Banner: {banner[:60]}"
+                            print(line)
+
                     # store (port, service) as a tuple
                     open_ports.append((port, service))
             except socket.error:

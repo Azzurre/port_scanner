@@ -1,4 +1,14 @@
 {
   "host": "127.0.0.1",
-  "ports": []
+  "scanned_at": "2025-12-03T13:43:33.443927Z",
+  "ports": [
+    {
+      "port": 135,
+      "service": "epmap"
+    },
+    {
+      "port": 445,
+      "service": "microsoft-ds"
+    }
+  ]
 }
