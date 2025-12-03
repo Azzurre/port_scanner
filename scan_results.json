@@ -1,14 +1,16 @@
 {
   "host": "127.0.0.1",
-  "scanned_at": "2025-12-03T13:43:33.443927Z",
+  "scanned_at": "2025-12-03T16:33:04.593009Z",
   "ports": [
     {
       "port": 135,
-      "service": "epmap"
+      "service": "epmap",
+      "banner": null
     },
     {
       "port": 445,
-      "service": "microsoft-ds"
+      "service": "microsoft-ds",
+      "banner": null
     }
   ]
 }

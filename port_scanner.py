@@ -4,6 +4,7 @@ import json
 import argparse
 from datetime import datetime
 from queue import Queue
+from typing import Optional
 
 print_lock = threading.Lock()
 
@@ -26,6 +27,7 @@ common_services = {
 
 BANNER_PORTS = {21, 22, 25, 80, 110, 143, 443, 8080}
 
+
 def get_service_name(port: int) -> str:
     # Check own mapping first
     if port in common_services:
@@ -37,20 +39,24 @@ def get_service_name(port: int) -> str:
     except OSError:
         return "Unknown Service"
 
-def grab_banner(host: str, port: int, timeout: float = 1.0) -> str:
+
+def grab_banner(host: str, port: int, timeout: float = 1.0) -> Optional[str]:
     """
     Attempt to grab the banner from an open port.
+    Returns the banner string or None.
     """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             s.connect((host, port))
-            
+
+            # For HTTP-like ports, send a simple request to provoke a response
             if port in {80, 8080, 8000, 8008}:
                 try:
-                    s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+                    s.sendall(b"HEAD / HTTP/1.0\r\n\r\n")
                 except OSError:
                     pass
+
             try:
                 data = s.recv(1024)
                 if not data:
@@ -58,12 +64,17 @@ def grab_banner(host: str, port: int, timeout: float = 1.0) -> str:
                 return data.decode(errors="ignore").strip()
             except socket.timeout:
                 return None
-            banner = s.recv(1024).decode(errors="ignore").strip()
-            return banner if banner else None
     except OSError:
         return None
-    
-def worker(host: str, q: Queue, open_ports: list, timeout: float = 0.5, verbose: bool = True):
+
+
+def worker(
+    host: str,
+    q: Queue,
+    open_ports: list,
+    timeout: float = 0.5,
+    verbose: bool = True,
+):
     """
     Worker thread: takes ports from the queue and checks if they're open.
     """
@@ -76,11 +87,11 @@ def worker(host: str, q: Queue, open_ports: list, timeout: float = 0.5, verbose:
                 result = s.connect_ex((host, port))
                 if result == 0:
                     service = get_service_name(port)
-                    
+
                     banner = None
                     if port in BANNER_PORTS:
                         banner = grab_banner(host, port)
-                        
+
                     with print_lock:
                         if verbose:
                             line = f"Port {port}/TCP is open ({service})"
@@ -88,8 +99,8 @@ def worker(host: str, q: Queue, open_ports: list, timeout: float = 0.5, verbose:
                                 line += f" - Banner: {banner[:60]}"
                             print(line)
 
-                    # store (port, service) as a tuple
-                    open_ports.append((port, service))
+                    # store (port, service, banner) as a tuple
+                    open_ports.append((port, service, banner))
             except socket.error:
                 pass
 
@@ -108,7 +119,7 @@ def threaded_scan(
     """
 
     q = Queue()
-    open_ports: list[tuple[int, str]] = []
+    open_ports: list[tuple[int, str, Optional[str]]] = []
 
     # Fill the queue with port numbers
     for port in ports:
@@ -141,7 +152,10 @@ def threaded_scan(
     results = {
         "host": host,
         "scanned_at": datetime.utcnow().isoformat() + "Z",
-        "ports": [{"port": p, "service": s, "banner": banner} for (p, s, ) in open_ports],
+        "ports": [
+            {"port": p, "service": s, "banner": b}
+            for (p, s, b) in open_ports
+        ],
     }
 
     if output_file is None:
