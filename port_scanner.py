@@ -1,7 +1,11 @@
 import socket;
+import threading
 from datetime import datetime;
+from queue import Queue;
 
-def scan_ports(host: str, port: int, timeout: float = 0.5) -> bool:
+print_lock = threading.Lock();
+        
+def worker(host: str, q: Queue , open_ports: list, timeout: float = 0.5):
     """
     Try to connect to a single TCP port.
     
@@ -14,47 +18,55 @@ def scan_ports(host: str, port: int, timeout: float = 0.5) -> bool:
     Returns:
         bool: Return True if port is open, False otherwise.
     """
-    
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(timeout);
+    while not q.empty():
+        port = q.get();
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout);
         try:
             result = s.connect_ex((host, port));
-            return result == 0;
+            if result == 0:
+                with print_lock:
+                    open_ports.append(port);
+                    print(f"Port {port} is open.");
             
         except socket.error:
-            return False;
+            pass
         
-def scan_range(host: str, start_port: int, end_port: int, timeout: float = 0.5) -> list[int]:
+        q.task_done();
+        
+def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 100):
     """
-    Scan a range of TCP ports on a given host.
-
+    Scan a range of TCP ports on a target host using multithreading.
+    
     Args:
-        host (str): The target host to scan.
-        start_port (int): The starting port number.
-        end_port (int): The ending port number.
-        timeout (float, optional): Timeout for each port scan. Defaults to 0.5.
-
-    Returns:
-        list[int]: A list of open ports.
+        host (str): Target host (IP or domain).
+        start_port (int): Starting port number.
+        end_port (int): Ending port number.
+        num_threads (int, optional): Number of threads to use. Defaults to 100.
     """
-    
+    q = Queue();
     open_ports = [];
-    print(f"Scanning ports {start_port} to {end_port} on host {host}...");
-    start_time = datetime.now();
-    
+    # Fill the queue with port numbers
     for port in range(start_port, end_port + 1):
-        if scan_ports(host, port, timeout):
-            open_ports.append(port);
-            print(f"Port {port} is open.");
+        q.put(port);
+    # Create and start threads
+    threads = [];
+
+    for _ in range(num_threads):
+        t = threading.Thread(target=worker, args=(host, q, open_ports));
+        t.daemon = True
+        t.start()
+        threads.append(t)
+# Wait for the queue to be empty
+    q.join();
     
-    end_time = datetime.now();
-    duration = end_time - start_time;
-    print(f"Scanning completed in {duration}.");
-    
+    # Wait for all threads to finish
     if open_ports:
-        print(f"Open ports: {open_ports}");
+        open_ports.sort()
+        print(f"\nOpen ports on {host}: {open_ports}")
     else:
-        print("No open ports found.");
+        print(f"\nNo open ports found on {host} in the range {start_port}-{end_port}.")
+        
     return open_ports;
 
 if __name__ == "__main__":
@@ -62,6 +74,7 @@ if __name__ == "__main__":
     target = input("Enter target host (IP or domain): ").strip()
     start = int(input("Enter start port (e.g., 1): "))
     end = int(input("Enter end port (e.g., 1024): "))
+    threads = int(input("Enter number of threads (e.g., 100): "))
     
-    scan_range(target, start, end)
+    threaded_scan(target, start, end, threads)
     
