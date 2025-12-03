@@ -74,6 +74,8 @@ def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 
         end_port (int): Ending port number.
         num_threads (int, optional): Number of threads to use. Defaults to 100.
     """
+    
+
     q = Queue();
     open_ports = [];
     # Fill the queue with port numbers
@@ -99,15 +101,20 @@ def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 
     else:
         print(f"\nNo open ports found on {host} in the range {start_port}-{end_port}.")
         
+        results = {
+        "host": host,
+        "ports": [{"port": p, "service": s} for p, s in open_ports]
+    }
+
+    with open("scan_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+    
+    print("Saved results to scan_results.json")
+
     return open_ports;
 
-results = {
-    "host": host,
-    "ports": [{"port": p, "service": s} for p, s in open_ports]
-}
 
-with open("scan_results.json", "w") as f:
-    json.dump(results, f, indent=2)
+
 
 if __name__ == "__main__":
     # simple cli input
