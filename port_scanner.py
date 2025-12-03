@@ -1,6 +1,7 @@
 import socket;
 import threading;
 import json;
+import argparse;
 from datetime import datetime;
 from queue import Queue;
 
@@ -22,6 +23,7 @@ common_services = {
         5900: "VNC",
         8080: "HTTP Proxy"
     }
+
 
 
 def get_service_name(port: int) -> str:
@@ -114,14 +116,32 @@ def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 
     return open_ports;
 
 
-
+def parse_args():
+    parser = argparse.ArgumentParser(description="Multithreaded TCP Port Scanner");
+    
+    parser.add_argument("-H", "--host", required=True, help="Target host (IP or domain)");
+    parser.add_argument("-p", "--ports", default="1-1024", help="Port range to scan (e.g., 1-1024)");
+    parser.add_argument("-t", "--threads", type=int, default=100, help="Number of threads to use (default: 100)");
+    parser.add_argument("-o", "--output", help="Output file to save results (optional)");
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output");
+    return parser.parse_args()
 
 if __name__ == "__main__":
     # simple cli input
-    target = input("Enter target host (IP or domain): ").strip()
-    start = int(input("Enter start port (e.g., 1): "))
-    end = int(input("Enter end port (e.g., 1024): "))
-    threads = int(input("Enter number of threads (e.g., 100): "))
     
-    threaded_scan(target, start, end, threads)
+    args = parse_args()
+    # Parse port range
+    ports = parse_ports(args.ports)
     
+    print(f"[+] Target: {args.host}");
+    print(f"[+] Ports: {ports[:10]}{'...' if len(ports) > 10 else ''}");
+    print(f"[+] Threads: {args.threads}\n");
+    
+    
+    threaded_scan(
+        host=args.host,
+        ports=ports,
+        thread_count=args.threads,
+        output_file=args.output,
+        verbose=args.verbose
+    )
