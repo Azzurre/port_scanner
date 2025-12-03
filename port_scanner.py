@@ -90,8 +90,10 @@ def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 
     
     # Wait for all threads to finish
     if open_ports:
-        open_ports.sort()
+        open_ports.sort(key=lambda x: x[0]) # sort by port number
         print(f"\nOpen ports on {host}: {open_ports}")
+        for port, service in open_ports:
+            print(f"Port {port}/TCP is open ({service})");
     else:
         print(f"\nNo open ports found on {host} in the range {start_port}-{end_port}.")
         
