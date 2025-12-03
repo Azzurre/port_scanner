@@ -1,5 +1,6 @@
 import socket;
-import threading
+import threading;
+import json;
 from datetime import datetime;
 from queue import Queue;
 
@@ -21,7 +22,8 @@ common_services = {
         5900: "VNC",
         8080: "HTTP Proxy"
     }
-        
+
+
 def get_service_name(port: int) -> str:
         #check own mapping first
         if port in common_services:
@@ -98,6 +100,14 @@ def threaded_scan(host: str, start_port: int, end_port: int, num_threads: int = 
         print(f"\nNo open ports found on {host} in the range {start_port}-{end_port}.")
         
     return open_ports;
+
+results = {
+    "host": host,
+    "ports": [{"port": p, "service": s} for p, s in open_ports]
+}
+
+with open("scan_results.json", "w") as f:
+    json.dump(results, f, indent=2)
 
 if __name__ == "__main__":
     # simple cli input
