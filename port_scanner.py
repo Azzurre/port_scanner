@@ -129,8 +129,11 @@ def threaded_scan(
     if open_ports:
         open_ports.sort(key=lambda x: x[0])  # sort by port number
         print(f"\nOpen ports on {host}:")
-        for port, service in open_ports:
-            print(f"Port {port}/TCP is open ({service})")
+        for port, service, banner in open_ports:
+            if banner:
+                print(f"Port {port}/TCP is open ({service}) - Banner: {banner[:80]}")
+            else:
+                print(f"Port {port}/TCP is open ({service})")
     else:
         print(f"\nNo open ports found on {host} in the selected range.")
 
@@ -138,7 +141,7 @@ def threaded_scan(
     results = {
         "host": host,
         "scanned_at": datetime.utcnow().isoformat() + "Z",
-        "ports": [{"port": p, "service": s} for p, s in open_ports],
+        "ports": [{"port": p, "service": s, "banner": banner} for (p, s, ) in open_ports],
     }
 
     if output_file is None:
