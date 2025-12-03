@@ -4,6 +4,23 @@ from datetime import datetime;
 from queue import Queue;
 
 print_lock = threading.Lock();
+
+common_services = {
+        20: "FTP Data",
+        21: "FTP Control",
+        22: "SSH",
+        23: "Telnet",
+        25: "SMTP",
+        53: "DNS",
+        80: "HTTP",
+        110: "POP3",
+        143: "IMAP",
+        443: "HTTPS",
+        3306: "MySQL",
+        3389: "RDP",
+        5900: "VNC",
+        8080: "HTTP Proxy"
+    }
         
 def worker(host: str, q: Queue , open_ports: list, timeout: float = 0.5):
     """
