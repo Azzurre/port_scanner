@@ -6,6 +6,9 @@ from datetime import datetime
 from queue import Queue, Empty
 from typing import Optional
 import html as html_lib
+import random
+import time
+
 
 
 print_lock = threading.Lock()
@@ -29,6 +32,45 @@ common_services = {
 
 BANNER_PORTS = {21, 22, 25, 80, 110, 143, 443, 8080}
 
+MODE_PROFILES = {
+    "fast": {
+        "timeout": 0.3,
+        "threads": 100,
+        "jitter": (0.0, 0.02),
+        "shuffle": True,
+    },
+    "normal": {
+        "timeout": 0.5,
+        "threads": 100,
+        "jitter": (0.0, 0.00),
+        "shuffle": False,
+    },
+    "aggressive": {
+        "timeout": 0.2,
+        "threads": 300,
+        "jitter": (0.0, 0.05),
+        "shuffle": True,
+    },
+    "stealth": {
+        "timeout": 1.0,
+        "threads": 30,
+        "jitter": (0.05, 0.5),
+        "shuffle": True,
+    },
+}
+
+def get_mode_settings(mode: str, threads_override: Optional[int] = None):
+    profile = MODE_PROFILES.get(mode, MODE_PROFILES["normal"])
+    timeout = profile["timeout"]
+    threads = threads_override if threads_override and threads_override > 0 else profile["threads"]
+    jitter_min, jitter_max = profile["jitter"]
+    shuffle = profile["shuffle"]
+    return {
+        "timeout": timeout,
+        "threads": threads,
+        "jitter": (jitter_min, jitter_max),
+        "shuffle": shuffle,
+    }
 
 def get_service_name(port: int) -> str:
     # Check own mapping first
@@ -101,8 +143,9 @@ def worker(
     q: Queue,
     open_ports: list,
     stats: dict,
-    timeout: float = 0.5,
-    verbose: bool = True,
+    timeout: float,
+    verbose: bool,
+    jitter: tuple[float, float],
 ):
     """
     Worker thread: takes ports from the queue and checks if they're open.
@@ -138,11 +181,20 @@ def worker(
         with print_lock:
             stats["processed"] += 1
             update_progress(stats, verbose)
+        
+        # Apply jitter delay if specified
+        jmin, jmax = jitter
+        if jmax > 0:
+            delay = random.uniform(jmin, jmax)
+            time.sleep(delay)
 
         q.task_done()
 
 
 def generate_html_report(results: dict, html_file: str) -> None:
+    
+    mode = html_lib.escape(results.get("mode", "unknown"))
+    
     """
     Generate an HTML report from the scan results.
     """
@@ -163,6 +215,7 @@ def generate_html_report(results: dict, html_file: str) -> None:
         <p>Scan finished at: {html_lib.escape(results['finished_at'])}</p>
         <p>Duration (seconds): {results['duration_seconds']}</p>
         <p>Total ports scanned: {results['total_ports_scanned']}</p>
+        <p>Scan mode: {mode}</p>
         <h2>Open Ports</h2>
         <table>
             <tr>
@@ -198,7 +251,10 @@ def generate_html_report(results: dict, html_file: str) -> None:
 def threaded_scan(
     host: str,
     ports: list[int],
-    num_threads: int = 100,
+    num_threads: int,
+    timeout: float,
+    jitter: tuple[float, float],
+    mode: str,
     output_file: str | None = None,
     html_output: str | None = None,
     verbose: bool = True,
@@ -212,9 +268,13 @@ def threaded_scan(
 
     q = Queue()
     open_ports: list[tuple[int, str, Optional[str]]] = []
+    
+    ports_to_scan = ports[:]
+    if MODE_PROFILES.get(mode, MODE_PROFILES["normal"])["shuffle"]:
+        random.shuffle(ports_to_scan)
 
     # Fill the queue with port numbers
-    for port in ports:
+    for port in ports_to_scan:
         q.put(port)
 
     start_time = datetime.utcnow()
@@ -224,7 +284,7 @@ def threaded_scan(
     for _ in range(num_threads):
         t = threading.Thread(
             target=worker,
-            args=(host, q, open_ports, stats, 0.5, verbose),
+            args=(host, q, open_ports, stats, timeout, verbose, jitter),
         )
         t.daemon = True
         t.start()
@@ -257,6 +317,7 @@ def threaded_scan(
     # Save results to JSON
     results = {
         "host": host,
+        "mode": mode,
         "started_at": start_time.isoformat() + "Z",
         "finished_at": end_time.isoformat() + "Z",
         "duration_seconds": duration,
@@ -312,7 +373,7 @@ def parse_args():
         "-t",
         "--threads",
         type=int,
-        default=100,
+        default=None,
         help="Number of threads to use (default: 100)",
     )
     parser.add_argument(
@@ -331,6 +392,12 @@ def parse_args():
         action="store_true",
         help="Enable verbose output (prints each open port immediately)",
     )
+    parser.add_argument(
+    "--mode",
+        choices=["fast", "normal", "aggressive", "stealth"],
+        default="normal",
+        help="Scan mode profile (affects timeout, threads, jitter, shuffle)",
+    )
     return parser.parse_args()
 
 
@@ -339,8 +406,12 @@ if __name__ == "__main__":
 
     ports = parse_ports(args.ports)
 
+    mode_settings = get_mode_settings(args.mode, args.threads)
+    
     print(f"[+] Target: {args.host}")
     print(f"[+] Ports: {ports[:10]}{'...' if len(ports) > 10 else ''}")
+    print(f"[+] Mode: {args.mode}")
+    print(f"[+] Timeout: {mode_settings['timeout']} seconds")
     print(f"[+] Threads: {args.threads}")
     print(f"[+] Verbose: {args.verbose}")
     print(f"[+] HTML report: {args.html if args.html else 'disabled'}\n")
@@ -348,8 +419,12 @@ if __name__ == "__main__":
     threaded_scan(
         host=args.host,
         ports=ports,
-        num_threads=args.threads,
+        num_threads=mode_settings["threads"],
+        timeout=mode_settings["timeout"],
+        jitter=mode_settings["jitter"],
+        mode=args.mode,
         output_file=args.output,
         html_output=args.html,
         verbose=args.verbose,
     )
+
