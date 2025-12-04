@@ -3,7 +3,7 @@ import threading
 import json
 import argparse
 from datetime import datetime
-from queue import Queue
+from queue import Queue, Empty
 from typing import Optional
 
 print_lock = threading.Lock()
@@ -68,27 +68,57 @@ def grab_banner(host: str, port: int, timeout: float = 1.0) -> Optional[str]:
         return None
 
 
+def update_progress(stats: dict, verbose: bool):
+    """
+    Simple text progress bar when verbose is False.
+    Called after each processed port.
+    """
+    if verbose:
+        # When verbose, we print each open port line-by-line, so
+        # a progress bar would just look messy.
+        return
+
+    processed = stats["processed"]
+    total = stats["total"]
+    if total == 0:
+        return
+
+    progress = processed / total
+    bar_len = 30
+    filled = int(bar_len * progress)
+    bar = "#" * filled + "-" * (bar_len - filled)
+    print(
+        f"\r[ {bar} ] {processed}/{total} ports ({progress*100:5.1f}%)",
+        end="",
+        flush=True,
+    )
+
+
 def worker(
     host: str,
     q: Queue,
     open_ports: list,
+    stats: dict,
     timeout: float = 0.5,
     verbose: bool = True,
 ):
     """
     Worker thread: takes ports from the queue and checks if they're open.
     """
-    while not q.empty():
-        port = q.get()
+    while True:
+        try:
+            port = q.get_nowait()
+        except Empty:
+            break
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             try:
                 result = s.connect_ex((host, port))
+                banner = None
                 if result == 0:
                     service = get_service_name(port)
 
-                    banner = None
                     if port in BANNER_PORTS:
                         banner = grab_banner(host, port)
 
@@ -99,10 +129,13 @@ def worker(
                                 line += f" - Banner: {banner[:60]}"
                             print(line)
 
-                    # store (port, service, banner) as a tuple
                     open_ports.append((port, service, banner))
             except socket.error:
                 pass
+
+        with print_lock:
+            stats["processed"] += 1
+            update_progress(stats, verbose)
 
         q.task_done()
 
@@ -118,6 +151,9 @@ def threaded_scan(
     Scan a list of TCP ports on a target host using multithreading.
     """
 
+    total_ports = len(ports)
+    stats = {"processed": 0, "total": total_ports}
+
     q = Queue()
     open_ports: list[tuple[int, str, Optional[str]]] = []
 
@@ -125,16 +161,27 @@ def threaded_scan(
     for port in ports:
         q.put(port)
 
+    start_time = datetime.utcnow()
+
     # Create and start threads
     threads = []
     for _ in range(num_threads):
-        t = threading.Thread(target=worker, args=(host, q, open_ports, 0.5, verbose))
+        t = threading.Thread(
+            target=worker,
+            args=(host, q, open_ports, stats, 0.5, verbose),
+        )
         t.daemon = True
         t.start()
         threads.append(t)
 
     # Wait for the queue to be empty
     q.join()
+    end_time = datetime.utcnow()
+    duration = (end_time - start_time).total_seconds()
+
+    # Ensure progress line ends nicely in non-verbose mode
+    if not verbose:
+        print()
 
     # Sort and print results
     if open_ports:
@@ -148,10 +195,16 @@ def threaded_scan(
     else:
         print(f"\nNo open ports found on {host} in the selected range.")
 
+    print(f"\nScan completed in {duration:.2f} seconds.")
+    print(f"Total ports scanned: {total_ports}")
+
     # Save results to JSON
     results = {
         "host": host,
-        "scanned_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": start_time.isoformat() + "Z",
+        "finished_at": end_time.isoformat() + "Z",
+        "duration_seconds": duration,
+        "total_ports_scanned": total_ports,
         "ports": [
             {"port": p, "service": s, "banner": b}
             for (p, s, b) in open_ports
@@ -213,7 +266,7 @@ def parse_args():
         "-v",
         "--verbose",
         action="store_true",
-        help="Enable verbose output",
+        help="Enable verbose output (prints each open port immediately)",
     )
     return parser.parse_args()
 
@@ -225,7 +278,8 @@ if __name__ == "__main__":
 
     print(f"[+] Target: {args.host}")
     print(f"[+] Ports: {ports[:10]}{'...' if len(ports) > 10 else ''}")
-    print(f"[+] Threads: {args.threads}\n")
+    print(f"[+] Threads: {args.threads}")
+    print(f"[+] Verbose: {args.verbose}\n")
 
     threaded_scan(
         host=args.host,
