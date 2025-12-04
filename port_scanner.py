@@ -5,6 +5,8 @@ import argparse
 from datetime import datetime
 from queue import Queue, Empty
 from typing import Optional
+import html as html_lib
+
 
 print_lock = threading.Lock()
 
@@ -140,11 +142,65 @@ def worker(
         q.task_done()
 
 
+def generate_html_report(results: dict, html_file: str) -> None:
+    """
+    Generate an HTML report from the scan results.
+    """
+    html_content = f"""
+    <html>
+    <head>
+        <title>Port Scan Report for {html_lib.escape(results['host'])}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; }}
+            th {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <h1>Port Scan Report for {html_lib.escape(results['host'])}</h1>
+        <p>Scan started at: {html_lib.escape(results['started_at'])}</p>
+        <p>Scan finished at: {html_lib.escape(results['finished_at'])}</p>
+        <p>Duration (seconds): {results['duration_seconds']}</p>
+        <p>Total ports scanned: {results['total_ports_scanned']}</p>
+        <h2>Open Ports</h2>
+        <table>
+            <tr>
+                <th>Port</th>
+                <th>Service</th>
+                <th>Banner</th>
+            </tr>
+    """
+
+    for port_info in results["ports"]:
+        port = port_info["port"]
+        service = html_lib.escape(port_info["service"])
+        banner = html_lib.escape(port_info["banner"] or "N/A")
+        html_content += f"""
+            <tr>
+                <td>{port}</td>
+                <td>{service}</td>
+                <td><pre>{banner}</pre></td>
+            </tr>
+        """
+
+    html_content += """
+        </table>
+    </body>
+    </html>
+    """
+
+    with open(html_file, "w") as f:
+        f.write(html_content)
+
+    print(f"\nSaved HTML report to {html_file}")
+
 def threaded_scan(
     host: str,
     ports: list[int],
     num_threads: int = 100,
     output_file: str | None = None,
+    html_output: str | None = None,
     verbose: bool = True,
 ):
     """
@@ -218,7 +274,9 @@ def threaded_scan(
         json.dump(results, f, indent=2)
 
     print(f"\nSaved results to {output_file}")
-
+    if html_output:
+        generate_html_report(results, html_output)
+        print(f"\nSaved HTML report to {html_output}")
     return open_ports
 
 
@@ -263,6 +321,11 @@ def parse_args():
         help="Output file to save results (default: scan_results.json)",
     )
     parser.add_argument(
+        "--html",
+        help="Output HTML report file (e.g. report.html)",
+    )
+    
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -279,12 +342,14 @@ if __name__ == "__main__":
     print(f"[+] Target: {args.host}")
     print(f"[+] Ports: {ports[:10]}{'...' if len(ports) > 10 else ''}")
     print(f"[+] Threads: {args.threads}")
-    print(f"[+] Verbose: {args.verbose}\n")
+    print(f"[+] Verbose: {args.verbose}")
+    print(f"[+] HTML report: {args.html if args.html else 'disabled'}\n")
 
     threaded_scan(
         host=args.host,
         ports=ports,
         num_threads=args.threads,
         output_file=args.output,
+        html_output=args.html,
         verbose=args.verbose,
     )

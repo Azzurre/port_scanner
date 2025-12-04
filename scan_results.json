@@ -1,19 +1,14 @@
 {
-  "host": "scanme.nmap.org",
-  "started_at": "2025-12-04T18:43:59.930691Z",
-  "finished_at": "2025-12-04T18:44:02.714761Z",
-  "duration_seconds": 2.78407,
+  "host": "speedtest.tele2.net",
+  "started_at": "2025-12-04T19:16:18.170583Z",
+  "finished_at": "2025-12-04T19:16:20.822634Z",
+  "duration_seconds": 2.652051,
   "total_ports_scanned": 500,
   "ports": [
     {
-      "port": 22,
-      "service": "SSH",
-      "banner": "SSH-2.0-OpenSSH_6.6.1p1 Ubuntu-2ubuntu2.13"
-    },
-    {
       "port": 80,
       "service": "HTTP",
-      "banner": "HTTP/1.0 200 OK\r\nDate: Thu, 04 Dec 2025 18:44:00 GMT\r\nServer: Apache/2.4.7 (Ubuntu)\r\nAccept-Ranges: bytes\r\nContent-Type: text/html"
+      "banner": "HTTP/1.0 200 OK\r\nServer: nginx\r\nDate: Thu, 04 Dec 2025 19:16:18 GMT\r\nContent-Type: text/html\r\nX-Powered-By: PHP/5.4.16"
     },
     {
       "port": 443,
